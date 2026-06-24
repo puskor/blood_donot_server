@@ -8,7 +8,7 @@ const app = express();
 app.use(cors())
 app.use(express.json()); // CRITICAL: ক্লায়েন্ট সাইডের বডি ডাটা রিড করার জন্য এটি লাগবে
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = process.env.PRIVATE_DB_URI;
 
 const client = new MongoClient(uri, {
@@ -49,7 +49,6 @@ async function run() {
                 res.status(500).send({ success: false, message: "Internal Server Error" });
             }
         });
-
         app.get("/api/user/save-details", async (req, res) => {
             const { userId } = req.query;
             // console.log("id",userId)
@@ -57,8 +56,87 @@ async function run() {
             res.json(result);
         });
 
+
+
+        // request collection instance
+        const request = database.collection("request");
+        app.post("/api/request", async (req, res) => {
+            try {
+                const bloodRequestData = req.body;
+                const finalRequestData = {
+                    ...bloodRequestData,
+                    createdAt: new Date()
+                };
+                const result = await request.insertOne(finalRequestData);
+
+                res.status(201).send({
+                    success: true,
+                    message: "Blood donation request stored successfully",
+                    insertedId: result.insertedId,
+                    data: finalRequestData
+                });
+            } catch (error) {
+                console.error("DB Insertion Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        });
+
+        app.get("/api/request-by-id", async (req, res) => {
+            try {
+                const { userId } = req.query;
+                if (!userId) {
+                    return res.status(400).json({ success: false, message: "User ID is required" });
+                }
+                const result = await request.find({ userId: userId }).sort({ createdAt: -1 }).toArray();
+                res.json(result);
+            } catch (error) {
+                console.error("Fetch User Requests Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        });
+
+        app.get("/api/request", async (req, res) => {
+            try {
+                const result = await request.find().sort({ createdAt: -1 }).toArray();
+                res.json(result);
+            } catch (error) {
+                console.error("Fetch All Requests Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        });
+
+        app.get("/api/request/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                // console.log(id)
+
+                const result = await request.findOne({
+                    _id: new ObjectId(id)
+                });
+
+                if (!result) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Request not found"
+                    });
+                }
+                res.json(result);
+            } catch (error) {
+                console.error("Fetch Request Error:", error);
+                res.status(500).json({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+
+
+
+
         console.log("Successfully connected to MongoDB!");
-    } catch (error) {
+    }
+    catch (error) {
         console.error("MongoDB Connection Error:", error);
     }
 }
