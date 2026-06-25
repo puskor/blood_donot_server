@@ -130,6 +130,93 @@ async function run() {
             }
         });
 
+        app.patch("/api/request/update/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                // 🌟 ফ্রন্টএন্ড থেকে donorId এবং status দুটিই রিসিভ করা হচ্ছে
+                const { donorId, status } = req.body;
+
+                if (!donorId) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Donor ID is required"
+                    });
+                }
+
+                // ডাটাবেজে রিকোয়েস্ট খুঁজে স্ট্যাটাস এবং ডোনারের আইডি আপডেট করা হচ্ছে
+                const result = await request.findOneAndUpdate(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            status: status || "In Progress", // ফ্রন্টএন্ড থেকে পাঠানো স্ট্যাটাস বসবে, না পাঠালে default "In Progress"
+                            acceptedBy: donorId,
+                            updatedAt: new Date()
+                        }
+                    },
+                    { returnDocument: "after" } // আপডেটেড ডেটা রিটার্ন করার জন্য
+                );
+
+                if (!result) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Request not found"
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: "Request updated successfully",
+                    data: result
+                });
+
+            } catch (error) {
+                console.error("Update Request Error:", error);
+                res.status(500).json({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+
+        const donate = database.collection("donate");
+        app.post("/api/donate", async (req, res) => {
+            try {
+                const bloodRequestData = req.body;
+                const finalRequestData = {
+                    ...bloodRequestData,
+                    createdAt: new Date()
+                };
+                const result = await donate.insertOne(finalRequestData);
+
+                res.status(201).send({
+                    success: true,
+                    message: "Blood donation request stored successfully",
+                    insertedId: result.insertedId,
+                    data: finalRequestData
+                });
+            } catch (error) {
+                console.error("DB Insertion Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        });
+
+app.get("/api/donate/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await donate.find({ donarId : id }).toArray();
+
+        // 🌟 ফিক্স: অ্যারে ফাঁকা কিনা তা চেক করার সঠিক নিয়ম (.length === 0)
+        if (!result || result.length === 0) {
+            return res.status(404).send({ success: false, message: "No donation history found for this donor" });
+        }
+
+        res.status(200).send({ success: true, data: result });
+    } catch (error) {
+        console.error("DB Find Error:", error);
+        res.status(500).send({ success: false, message: "Internal Server Error" });
+    }
+});
 
 
 
