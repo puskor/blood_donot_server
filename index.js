@@ -104,14 +104,53 @@ async function run() {
 
         app.get("/api/request", async (req, res) => {
             try {
-                const result = await request.find().sort({ createdAt: -1 }).toArray();
-                res.json(result);
+                // ১. ফ্রন্টএন্ড থেকে পাঠানো কোয়েরি প্যারামিটারগুলো ধরা হচ্ছে
+                const { bloodGroup, division, district, upazila } = req.query;
+
+                // পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৯ যেহেতু ফ্রন্টএন্ডে ৩ কলাম গ্রিড)
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 9;
+                const skip = (page - 1) * limit;
+
+                // ২. ডাইনামিক ফিল্টার অবজেক্ট তৈরি
+                let queryObj = {};
+
+                if (bloodGroup) queryObj.bloodGroup = bloodGroup;
+                if (division) queryObj.division = division;
+                if (district) queryObj.district = district;
+                if (upazila) queryObj.upazila = upazila;
+
+                // ৩. ফিল্টার অনুযায়ী ডাটাবেজের মোট রিকোয়েস্ট সংখ্যা বের করা (পেজিনেশন ক্যালকুলেশনের জন্য)
+                const totalRequests = await request.countDocuments(queryObj);
+
+                // ৪. skip, limit এবং sort ব্যবহার করে নির্দিষ্ট পেজের ডাটা আনা
+                const result = await request.find(queryObj)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+
+                // মোট কয়টি পেজ তৈরি হবে তার হিসাব
+                const totalPages = Math.ceil(totalRequests / limit);
+
+                // ৫. ফ্রন্টএন্ড অ্যাকশনের স্ট্রাকচার অনুযায়ী রেসপন্স পাঠানো
+                res.status(200).json({
+                    success: true,
+                    data: result,
+                    pagination: {
+                        totalRequests,
+                        totalPages,
+                        currentPage: page,
+                        limit
+                    }
+                });
+
             } catch (error) {
-                console.error("Fetch All Requests Error:", error);
-                res.status(500).send({ success: false, message: "Internal Server Error" });
+                console.error("Fetch Filtered Requests Error:", error);
+                res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
-
+        
         app.get("/api/request/:id", async (req, res) => {
             try {
                 const { id } = req.params;
