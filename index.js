@@ -150,7 +150,9 @@ async function run() {
                 res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
-        
+
+
+
         app.get("/api/request/:id", async (req, res) => {
             try {
                 const { id } = req.params;
@@ -176,36 +178,49 @@ async function run() {
             }
         });
 
+        // 📝 ১. Blood Request Update API (PATCH)
+        // এই রাউটটি দিয়ে স্ট্যাটাস চেঞ্জ (Accept/In Progress) এবং এডিট মডালের ডাটা উভয়ই আপডেট করা যাবে
         app.patch("/api/request/update/:id", async (req, res) => {
             try {
                 const { id } = req.params;
-                // 🌟 ফ্রন্টএন্ড থেকে donorId এবং status দুটিই রিসিভ করা হচ্ছে
-                const { donorId, status } = req.body;
+                // ফ্রন্টএন্ড থেকে আসা সম্ভাব্য সব আপডেট ফিল্ড রিসিভ করা হচ্ছে
+                const { donorId, status, patientName, bloodGroup, hospitalName, neededDate, neededTime } = req.body;
 
-                if (!donorId) {
+                // মঙ্গোডিবির অবজেক্ট আইডি ভ্যালিডেশন সেফটি চেক
+                if (!ObjectId.isValid(id)) {
                     return res.status(400).json({
                         success: false,
-                        message: "Donor ID is required"
+                        message: "Invalid Request ID format"
                     });
                 }
 
-                // ডাটাবেজে রিকোয়েস্ট খুঁজে স্ট্যাটাস এবং ডোনারের আইডি আপডেট করা হচ্ছে
+                // ডাইনামিক আপডেটের জন্য অবজেক্ট তৈরি
+                const updateData = {
+                    updatedAt: new Date()
+                };
+
+                // যদি ভলান্টিয়ার বা ডোনার রিকোয়েস্ট অ্যাকসেপ্ট করে (Status/DonorId আপডেট)
+                if (status) updateData.status = status;
+                if (donorId) updateData.acceptedBy = donorId;
+
+                // যদি ইউজার এডিট মডাল থেকে ডাটা চেঞ্জ করে
+                if (patientName) updateData.patientName = patientName;
+                if (bloodGroup) updateData.bloodGroup = bloodGroup;
+                if (hospitalName) updateData.hospitalName = hospitalName;
+                if (neededDate) updateData.neededDate = neededDate;
+                if (neededTime) updateData.neededTime = neededTime;
+
+                // ডাটাবেজে আপডেট অপারেশন রান করা
                 const result = await request.findOneAndUpdate(
                     { _id: new ObjectId(id) },
-                    {
-                        $set: {
-                            status: status || "In Progress", // ফ্রন্টএন্ড থেকে পাঠানো স্ট্যাটাস বসবে, না পাঠালে default "In Progress"
-                            acceptedBy: donorId,
-                            updatedAt: new Date()
-                        }
-                    },
-                    { returnDocument: "after" } // আপডেটেড ডেটা রিটার্ন করার জন্য
+                    { $set: updateData },
+                    { returnDocument: "after" } // আপডেটেড নতুন ডাটা রিটার্ন করবে (Mongoose হলে { new: true } ব্যবহার করবেন)
                 );
 
                 if (!result) {
                     return res.status(404).json({
                         success: false,
-                        message: "Request not found"
+                        message: "Blood request not found"
                     });
                 }
 
@@ -217,6 +232,46 @@ async function run() {
 
             } catch (error) {
                 console.error("Update Request Error:", error);
+                res.status(500).json({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+
+        // 🚨 ২. Blood Request Delete API (DELETE)
+        // টেবিল থেকে ডিলিট বাটনে চাপ দিলে এবং মডালে কনফার্ম করলে এই এপিআই কাজ করবে
+        app.delete("/api/request/delete/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                // আইডি ভ্যালিডেশন চেক
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Invalid Request ID format"
+                    });
+                }
+
+                // ডাটাবেজ থেকে রিমুভ করার কমান্ড (Mongoose হলে request.findByIdAndDelete(id))
+                const result = await request.deleteOne({ _id: new ObjectId(id) });
+
+                // যদি কোনো ডকুমেন্ট ডিলিট না হয় (ভুল আইডি বা অলরেডি ডিলিটেড)
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "Request not found or already deleted"
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: "Blood request deleted successfully"
+                });
+
+            } catch (error) {
+                console.error("Delete Request Error:", error);
                 res.status(500).json({
                     success: false,
                     message: "Internal Server Error"
