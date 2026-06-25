@@ -49,12 +49,19 @@ async function run() {
                 res.status(500).send({ success: false, message: "Internal Server Error" });
             }
         });
-        app.get("/api/user/save-details", async (req, res) => {
-            const { userId } = req.query;
-            // console.log("id",userId)
-            const result = await usersCollection.findOne({ userId });
+        app.get("/api/user/save-details/:id", async (req, res) => {
+            const { id } = req.params;
+            // console.log("id",id)
+
+            const result = await usersCollection.findOne({ userId: id });
             res.json(result);
         });
+
+        app.get("/api/user/save-details", async (req, res) => {
+            const result = await usersCollection.find().toArray();
+            res.json(result);
+        });
+
 
 
 
@@ -201,25 +208,65 @@ async function run() {
             }
         });
 
-app.get("/api/donate/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-        const result = await donate.find({ donarId : id }).toArray();
+        app.get("/api/donate/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                const result = await donate.find({ donarId: id }).toArray();
 
-        // 🌟 ফিক্স: অ্যারে ফাঁকা কিনা তা চেক করার সঠিক নিয়ম (.length === 0)
-        if (!result || result.length === 0) {
-            return res.status(404).send({ success: false, message: "No donation history found for this donor" });
-        }
+                // 🌟 ফিক্স: অ্যারে ফাঁকা কিনা তা চেক করার সঠিক নিয়ম (.length === 0)
+                if (!result || result.length === 0) {
+                    return res.status(404).send({ success: false, message: "No donation history found for this donor" });
+                }
 
-        res.status(200).send({ success: true, data: result });
-    } catch (error) {
-        console.error("DB Find Error:", error);
-        res.status(500).send({ success: false, message: "Internal Server Error" });
-    }
-});
+                res.status(200).send({ success: true, data: result });
+            } catch (error) {
+                console.error("DB Find Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        });
 
+        app.get("/api/donors", async (req, res) => {
+            try {
+                const { bloodGroup, division, district, upazila } = req.query;
 
+                // 🌟 পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৮)
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 8;
+                const skip = (page - 1) * limit;
 
+                let queryObj = {};
+                if (bloodGroup) queryObj.bloodGroup = bloodGroup;
+                if (division) queryObj.division = division;
+                if (district) queryObj.district = district;
+                if (upazila) queryObj.upazila = upazila;
+
+                // ১. ফিল্টার অনুযায়ী মোট ডোনরের সংখ্যা বের করা (বাটন বানানোর জন্য লাগবে)
+                const totalDonors = await usersCollection.countDocuments(queryObj);
+
+                // ২. skip এবং limit ব্যবহার করে নির্দিষ্ট পেজের ডাটা আনা
+                const result = await usersCollection.find(queryObj)
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+
+                // মোট কয়টি পেজ হবে তার হিসাব
+                const totalPages = Math.ceil(totalDonors / limit);
+
+                res.status(200).json({
+                    success: true,
+                    data: result,
+                    pagination: {
+                        totalDonors,
+                        totalPages,
+                        currentPage: page,
+                        limit
+                    }
+                });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ success: false, message: "Server Error" });
+            }
+        });
 
         console.log("Successfully connected to MongoDB!");
     }
