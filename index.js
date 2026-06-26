@@ -25,13 +25,36 @@ async function run() {
 
         // Database এবং Collection ডিফাইন করা
         const database = client.db("blood_donor");
-        const usersCollection = database.collection("users_profile");
 
         // ১. রুট রাউট
         app.get("/", (req, res) => {
             res.send("hello this is donor");
         });
 
+        const payment = database.collection("payment");
+
+        app.post("/api/payment", async (req, res) => {
+            try {
+                const paymentData = req.body;
+                const result = await payment.insertOne(paymentData)
+                res.status(201).send({
+                    success: true,
+                    message: "User additional metadata stored successfully",
+                    insertedId: result.insertedId
+                });
+            } catch (error) {
+                console.error("DB Insertion Error:", error);
+                res.status(500).send({ success: false, message: "Internal Server Error" });
+            }
+        })
+
+        app.get("/api/payment",async(req,res)=>{
+            const result = await payment.find().toArray()
+            res.json(result)
+        })
+
+
+        const usersCollection = database.collection("users_profile");
         // ২. কাস্টম সাইন-আপ মেটাডাটা সেভ করার POST API রাউট
         app.post("/api/user/save-details", async (req, res) => {
             try {
