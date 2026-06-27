@@ -22,18 +22,14 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         await client.connect();
+        console.log("Successfully connected to MongoDB!");
+        
         const database = client.db("blood_donor");
         const sessionCollection = database.collection('session');
         const usersData = database.collection("user");
 
-
-
         const verifyToken = async (req, res, next) => {
-            // console.log(req.headers)
-
             const authHeader = req.headers?.authorization;
-            // console.log(authHeader)
-
             if (!authHeader) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
@@ -42,29 +38,22 @@ async function run() {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
             const query = { token: token }
-
             const session = await sessionCollection.findOne(query);
 
             if (!session) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
             const userId = session.userId;
-            const userQuery = {
-                _id: userId
-            }
-
+            const userQuery = { _id: userId }
             const user = await usersData.findOne(userQuery);
-            // console.log(user)
 
             if (!user) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
-            // set data in the req object
             req.user = user;
             next();
         }
 
-        // must be used after verifyToken middleware
         const verifyDonor = async (req, res, next) => {
             if (req.user?.role !== 'donor' && req.user?.role !== 'user') {
                 return res.status(403).send({ message: 'forbidden access' })
@@ -79,7 +68,6 @@ async function run() {
             next();
         }
 
-        // must be used after verifyToken middleware
         const verifyVolunteer = async (req, res, next) => {
             if (req.user?.role !== 'volunteer') {
                 return res.status(403).send({ message: 'forbidden access' })
@@ -87,7 +75,6 @@ async function run() {
             next();
         }
 
-        // must be used after verifyToken middleware
         const verifyAdmin = async (req, res, next) => {
             if (req.user.role !== 'admin') {
                 return res.status(403).send({ message: 'forbidden access' })
@@ -95,10 +82,8 @@ async function run() {
             next();
         }
 
-        // Database এবং Collection ডিফাইন করা
-
         app.get("/", (req, res) => {
-            res.send("hello this is donor");
+            res.send("hello this is donor API running");
         });
 
         const payment = database.collection("payment");
@@ -118,10 +103,7 @@ async function run() {
             }
         })
 
-
-
         app.get("/api/payment", verifyToken, async (req, res) => {
-
             const result = await payment.find().toArray()
             res.json(result)
         })
@@ -130,18 +112,10 @@ async function run() {
         app.post("/api/user/save-details", verifyToken, async (req, res) => {
             try {
                 const profileData = req.body;
-                // Profile Save
                 const profileResult = await usersCollection.insertOne(profileData);
-                // Better Auth User Collection Update
                 await usersData.updateOne(
-                    {
-                        _id: new ObjectId(profileData.userId), // Better Auth user id
-                    },
-                    {
-                        $set: {
-                            role: "donor",
-                        },
-                    }
+                    { _id: new ObjectId(profileData.userId) },
+                    { $set: { role: "donor" } }
                 );
 
                 res.status(201).send({
@@ -151,12 +125,10 @@ async function run() {
                 });
             } catch (error) {
                 console.error("DB Error:", error);
-                res.status(500).send({
-                    success: false,
-                    message: "Internal Server Error",
-                });
+                res.status(500).send({ success: false, message: "Internal Server Error" });
             }
         });
+
         app.get("/api/user/save-details/:id", verifyToken, async (req, res) => {
             const { id } = req.params;
             const result = await usersCollection.findOne({ userId: id });
@@ -167,31 +139,25 @@ async function run() {
             const result = await usersCollection.find().toArray();
             res.json(result);
         });
-        app.put("/api/user/save-details/:id", verifyToken,verifyAdmin, async (req, res) => {
-            try {
-                const { id } = req.params; // ফ্রন্টএন্ড থেকে আসা userId
-                const updatedData = req.body; // ফর্ম থেকে আসা নতুন ডাটা
 
-                // সিকিউরিটির জন্য বডি থেকে আইডি বা অবজেক্ট আইডি বাদ দিয়ে দেওয়া ভালো
+        app.put("/api/user/save-details/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const updatedData = req.body;
+
                 delete updatedData._id;
                 delete updatedData.userId;
 
-                // ক) প্রোফাইল কালেকশন আপডেট করা হচ্ছে (users_profile)
                 const profileResult = await usersCollection.updateOne(
                     { userId: id },
                     { $set: updatedData },
-                    { upsert: true } // যদি প্রোফাইল আগে না থেকে থাকে, তবে নতুন তৈরি হবে
+                    { upsert: true }
                 );
 
-                // খ) Better Auth কালেকশনে রোল আপডেট করা (যদি ফর্মে রোল পরিবর্তন করা হয়)
                 if (updatedData.role) {
                     await usersData.updateOne(
                         { _id: new ObjectId(id) },
-                        {
-                            $set: {
-                                role: updatedData.role, // নতুন সিলেক্ট করা রোল ('donor', 'admin', etc.)
-                            },
-                        }
+                        { $set: { role: updatedData.role } }
                     );
                 }
 
@@ -203,25 +169,15 @@ async function run() {
 
             } catch (error) {
                 console.error("Update DB Error:", error);
-                res.status(500).json({
-                    success: false,
-                    message: "Internal Server Error",
-                });
+                res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
 
-
-
-
-        // request collection instance
         const request = database.collection("request");
         app.post("/api/request", verifyToken, async (req, res) => {
             try {
                 const bloodRequestData = req.body;
-                const finalRequestData = {
-                    ...bloodRequestData,
-                    createdAt: new Date()
-                };
+                const finalRequestData = { ...bloodRequestData, createdAt: new Date() };
                 const result = await request.insertOne(finalRequestData);
 
                 res.status(201).send({
@@ -252,46 +208,30 @@ async function run() {
 
         app.get("/api/request", async (req, res) => {
             try {
-                // ১. ফ্রন্টএন্ড থেকে পাঠানো কোয়েরি প্যারামিটারগুলো ধরা হচ্ছে
                 const { bloodGroup, division, district, upazila } = req.query;
-                // console.log("request",req.query)
-
-                // পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৯ যেহেতু ফ্রন্টএন্ডে ৩ কলাম গ্রিড)
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 9;
                 const skip = (page - 1) * limit;
 
-                // ২. ডাইনামিক ফিল্টার অবজেক্ট তৈরি
                 let queryObj = {};
-
                 if (bloodGroup) queryObj.bloodGroup = bloodGroup;
                 if (division) queryObj.division = division;
                 if (district) queryObj.district = district;
                 if (upazila) queryObj.upazila = upazila;
 
-                // ৩. ফিল্টার অনুযায়ী ডাটাবেজের মোট রিকোয়েস্ট সংখ্যা বের করা (পেজিনেশন ক্যালকুলেশনের জন্য)
                 const totalRequests = await request.countDocuments(queryObj);
-
-                // ৪. skip, limit এবং sort ব্যবহার করে নির্দিষ্ট পেজের ডাটা আনা
                 const result = await request.find(queryObj)
                     .sort({ createdAt: -1 })
                     .skip(skip)
                     .limit(limit)
                     .toArray();
 
-                // মোট কয়টি পেজ তৈরি হবে তার হিসাব
                 const totalPages = Math.ceil(totalRequests / limit);
 
-                // ৫. ফ্রন্টএন্ড অ্যাকশনের স্ট্রাকচার অনুযায়ী রেসপন্স পাঠানো
                 res.status(200).json({
                     success: true,
                     data: result,
-                    pagination: {
-                        totalRequests,
-                        totalPages,
-                        currentPage: page,
-                        limit
-                    }
+                    pagination: { totalRequests, totalPages, currentPage: page, limit }
                 });
 
             } catch (error) {
@@ -300,143 +240,82 @@ async function run() {
             }
         });
 
-
-
         app.get("/api/request/:id", async (req, res) => {
             try {
                 const { id } = req.params;
-                // console.log(id)
-
-                const result = await request.findOne({
-                    _id: new ObjectId(id)
-                });
+                const result = await request.findOne({ _id: new ObjectId(id) });
 
                 if (!result) {
-                    return res.status(404).json({
-                        success: false,
-                        message: "Request not found"
-                    });
+                    return res.status(404).json({ success: false, message: "Request not found" });
                 }
                 res.json(result);
             } catch (error) {
                 console.error("Fetch Request Error:", error);
-                res.status(500).json({
-                    success: false,
-                    message: "Internal Server Error"
-                });
+                res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
 
-        // 📝 ১. Blood Request Update API (PATCH)
-        // এই রাউটটি দিয়ে স্ট্যাটাস চেঞ্জ (Accept/In Progress) এবং এডিট মডালের ডাটা উভয়ই আপডেট করা যাবে
         app.patch("/api/request/update/:id", verifyToken, verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
-                // ফ্রন্টএন্ড থেকে আসা সম্ভাব্য সব আপডেট ফিল্ড রিসিভ করা হচ্ছে
                 const { donorId, status, patientName, bloodGroup, hospitalName, neededDate, neededTime } = req.body;
 
-                // মঙ্গোডিবির অবজেক্ট আইডি ভ্যালিডেশন সেফটি চেক
                 if (!ObjectId.isValid(id)) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Invalid Request ID format"
-                    });
+                    return res.status(400).json({ success: false, message: "Invalid Request ID format" });
                 }
 
-                // ডাইনামিক আপডেটের জন্য অবজেক্ট তৈরি
-                const updateData = {
-                    updatedAt: new Date()
-                };
-
-                // যদি ভলান্টিয়ার বা ডোনার রিকোয়েস্ট অ্যাকসেপ্ট করে (Status/DonorId আপডেট)
+                const updateData = { updatedAt: new Date() };
                 if (status) updateData.status = status;
                 if (donorId) updateData.acceptedBy = donorId;
-
-                // যদি ইউজার এডিট মডাল থেকে ডাটা চেঞ্জ করে
                 if (patientName) updateData.patientName = patientName;
                 if (bloodGroup) updateData.bloodGroup = bloodGroup;
                 if (hospitalName) updateData.hospitalName = hospitalName;
                 if (neededDate) updateData.neededDate = neededDate;
                 if (neededTime) updateData.neededTime = neededTime;
 
-                // ডাটাবেজে আপডেট অপারেশন রান করা
                 const result = await request.findOneAndUpdate(
                     { _id: new ObjectId(id) },
                     { $set: updateData },
-                    { returnDocument: "after" } // আপডেটেড নতুন ডাটা রিটার্ন করবে (Mongoose হলে { new: true } ব্যবহার করবেন)
+                    { returnDocument: "after" }
                 );
 
                 if (!result) {
-                    return res.status(404).json({
-                        success: false,
-                        message: "Blood request not found"
-                    });
+                    return res.status(404).json({ success: false, message: "Blood request not found" });
                 }
 
-                res.json({
-                    success: true,
-                    message: "Request updated successfully",
-                    data: result
-                });
+                res.json({ success: true, message: "Request updated successfully", data: result });
 
             } catch (error) {
                 console.error("Update Request Error:", error);
-                res.status(500).json({
-                    success: false,
-                    message: "Internal Server Error"
-                });
+                res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
 
-
-        // 🚨 ২. Blood Request Delete API (DELETE)
-        // টেবিল থেকে ডিলিট বাটনে চাপ দিলে এবং মডালে কনফার্ম করলে এই এপিআই কাজ করবে
         app.delete("/api/request/delete/:id", verifyToken, verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
-
-                // আইডি ভ্যালিডেশন চেক
                 if (!ObjectId.isValid(id)) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Invalid Request ID format"
-                    });
+                    return res.status(400).json({ success: false, message: "Invalid Request ID format" });
                 }
 
-                // ডাটাবেজ থেকে রিমুভ করার কমান্ড (Mongoose হলে request.findByIdAndDelete(id))
                 const result = await request.deleteOne({ _id: new ObjectId(id) });
-
-                // যদি কোনো ডকুমেন্ট ডিলিট না হয় (ভুল আইডি বা অলরেডি ডিলিটেড)
                 if (result.deletedCount === 0) {
-                    return res.status(404).json({
-                        success: false,
-                        message: "Request not found or already deleted"
-                    });
+                    return res.status(404).json({ success: false, message: "Request not found or already deleted" });
                 }
 
-                res.json({
-                    success: true,
-                    message: "Blood request deleted successfully"
-                });
+                res.json({ success: true, message: "Blood request deleted successfully" });
 
             } catch (error) {
                 console.error("Delete Request Error:", error);
-                res.status(500).json({
-                    success: false,
-                    message: "Internal Server Error"
-                });
+                res.status(500).json({ success: false, message: "Internal Server Error" });
             }
         });
-
 
         const donate = database.collection("donate");
         app.post("/api/donate", verifyToken, async (req, res) => {
             try {
                 const bloodRequestData = req.body;
-                const finalRequestData = {
-                    ...bloodRequestData,
-                    createdAt: new Date()
-                };
+                const finalRequestData = { ...bloodRequestData, createdAt: new Date() };
                 const result = await donate.insertOne(finalRequestData);
 
                 res.status(201).send({
@@ -456,11 +335,9 @@ async function run() {
                 const { id } = req.params;
                 const result = await donate.find({ donarId: id }).toArray();
 
-                // 🌟 ফিক্স: অ্যারে ফাঁকা কিনা তা চেক করার সঠিক নিয়ম (.length === 0)
                 if (!result || result.length === 0) {
                     return res.status(404).send({ success: false, message: "No donation history found for this donor" });
                 }
-
                 res.status(200).send({ success: true, data: result });
             } catch (error) {
                 console.error("DB Find Error:", error);
@@ -471,9 +348,6 @@ async function run() {
         app.get("/api/donors", async (req, res) => {
             try {
                 const { bloodGroup, division, district, upazila } = req.query;
-                console.log(req.query)
-
-                // 🌟 পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৮)
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 8;
                 const skip = (page - 1) * limit;
@@ -484,42 +358,34 @@ async function run() {
                 if (district) queryObj.district = district;
                 if (upazila) queryObj.upazila = upazila;
 
-                // ১. ফিল্টার অনুযায়ী মোট ডোনরের সংখ্যা বের করা (বাটন বানানোর জন্য লাগবে)
                 const totalDonors = await usersCollection.countDocuments(queryObj);
-
-                // ২. skip এবং limit ব্যবহার করে নির্দিষ্ট পেজের ডাটা আনা
-                const result = await usersCollection.find(queryObj)
-                    .skip(skip)
-                    .limit(limit)
-                    .toArray();
-
-                // মোট কয়টি পেজ হবে তার হিসাব
+                const result = await usersCollection.find(queryObj).skip(skip).limit(limit).toArray();
                 const totalPages = Math.ceil(totalDonors / limit);
 
                 res.status(200).json({
                     success: true,
                     data: result,
-                    pagination: {
-                        totalDonors,
-                        totalPages,
-                        currentPage: page,
-                        limit
-                    }
+                    pagination: { totalDonors, totalPages, currentPage: page, limit }
                 });
             } catch (error) {
-                // console.error(error);
                 res.status(500).json({ success: false, message: "Server Error" });
             }
         });
 
-        // console.log("Successfully connected to MongoDB!");
-    }
-    catch (error) {
-        // console.error("MongoDB Connection Error:", error);
+        // লোকাল হোস্ট এনভায়রনমেন্টের জন্য listen চালু রাখা
+        if (process.env.NODE_ENV !== 'production') {
+            app.listen(port, () => {
+                console.log(`Server is running on port ${port}`);
+            });
+        }
+
+    } catch (error) {
+        console.error("MongoDB Connection Error:", error);
     }
 }
+
+// কানেকশন রান করা
 run().catch(console.dir);
 
-app.listen(port, () => {
-    console.log(`Example app listening on port ${port}`);
-});
+// Vercel Serverless Function এর জন্য অ্যাপটি এক্সপোর্ট করা অত্যন্ত জরুরি
+module.exports = app;
