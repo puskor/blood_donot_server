@@ -66,7 +66,7 @@ async function run() {
 
         // must be used after verifyToken middleware
         const verifyDonor = async (req, res, next) => {
-            if (req.user?.role !== 'donor') {
+            if (req.user?.role !== 'donor' && req.user?.role !== 'user') {
                 return res.status(403).send({ message: 'forbidden access' })
             }
             next();
@@ -126,29 +126,39 @@ async function run() {
             res.json(result)
         })
 
-
         const usersCollection = database.collection("users_profile");
-        // ২. কাস্টম সাইন-আপ মেটাডাটা সেভ করার POST API রাউট
         app.post("/api/user/save-details", verifyToken, async (req, res) => {
             try {
                 const profileData = req.body;
-                // ডাটাবেজে ডাটা ইনসার্ট করা
-                const result = await usersCollection.insertOne(profileData);
+                // Profile Save
+                const profileResult = await usersCollection.insertOne(profileData);
+                // Better Auth User Collection Update
+                await usersData.updateOne(
+                    {
+                        _id: new ObjectId(profileData.userId), // Better Auth user id
+                    },
+                    {
+                        $set: {
+                            role: "donor",
+                        },
+                    }
+                );
 
                 res.status(201).send({
                     success: true,
-                    message: "User additional metadata stored successfully",
-                    insertedId: result.insertedId
+                    message: "User profile saved and role updated successfully.",
+                    insertedId: profileResult.insertedId,
                 });
             } catch (error) {
-                console.error("DB Insertion Error:", error);
-                res.status(500).send({ success: false, message: "Internal Server Error" });
+                console.error("DB Error:", error);
+                res.status(500).send({
+                    success: false,
+                    message: "Internal Server Error",
+                });
             }
         });
         app.get("/api/user/save-details/:id", verifyToken, async (req, res) => {
             const { id } = req.params;
-            // console.log("id",id)
-
             const result = await usersCollection.findOne({ userId: id });
             res.json(result);
         });
@@ -157,13 +167,55 @@ async function run() {
             const result = await usersCollection.find().toArray();
             res.json(result);
         });
+        app.put("/api/user/save-details/:id", verifyToken,verifyAdmin, async (req, res) => {
+            try {
+                const { id } = req.params; // ফ্রন্টএন্ড থেকে আসা userId
+                const updatedData = req.body; // ফর্ম থেকে আসা নতুন ডাটা
+
+                // সিকিউরিটির জন্য বডি থেকে আইডি বা অবজেক্ট আইডি বাদ দিয়ে দেওয়া ভালো
+                delete updatedData._id;
+                delete updatedData.userId;
+
+                // ক) প্রোফাইল কালেকশন আপডেট করা হচ্ছে (users_profile)
+                const profileResult = await usersCollection.updateOne(
+                    { userId: id },
+                    { $set: updatedData },
+                    { upsert: true } // যদি প্রোফাইল আগে না থেকে থাকে, তবে নতুন তৈরি হবে
+                );
+
+                // খ) Better Auth কালেকশনে রোল আপডেট করা (যদি ফর্মে রোল পরিবর্তন করা হয়)
+                if (updatedData.role) {
+                    await usersData.updateOne(
+                        { _id: new ObjectId(id) },
+                        {
+                            $set: {
+                                role: updatedData.role, // নতুন সিলেক্ট করা রোল ('donor', 'admin', etc.)
+                            },
+                        }
+                    );
+                }
+
+                res.status(200).json({
+                    success: true,
+                    message: "User profile and system role updated successfully.",
+                    modifiedCount: profileResult.modifiedCount
+                });
+
+            } catch (error) {
+                console.error("Update DB Error:", error);
+                res.status(500).json({
+                    success: false,
+                    message: "Internal Server Error",
+                });
+            }
+        });
 
 
 
 
         // request collection instance
         const request = database.collection("request");
-        app.post("/api/request",verifyToken, async (req, res) => {
+        app.post("/api/request", verifyToken, async (req, res) => {
             try {
                 const bloodRequestData = req.body;
                 const finalRequestData = {
@@ -202,6 +254,7 @@ async function run() {
             try {
                 // ১. ফ্রন্টএন্ড থেকে পাঠানো কোয়েরি প্যারামিটারগুলো ধরা হচ্ছে
                 const { bloodGroup, division, district, upazila } = req.query;
+                // console.log("request",req.query)
 
                 // পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৯ যেহেতু ফ্রন্টএন্ডে ৩ কলাম গ্রিড)
                 const page = parseInt(req.query.page) || 1;
@@ -276,7 +329,7 @@ async function run() {
 
         // 📝 ১. Blood Request Update API (PATCH)
         // এই রাউটটি দিয়ে স্ট্যাটাস চেঞ্জ (Accept/In Progress) এবং এডিট মডালের ডাটা উভয়ই আপডেট করা যাবে
-        app.patch("/api/request/update/:id", verifyToken,verifyAdminOrVolunteer, async (req, res) => {
+        app.patch("/api/request/update/:id", verifyToken, verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
                 // ফ্রন্টএন্ড থেকে আসা সম্ভাব্য সব আপডেট ফিল্ড রিসিভ করা হচ্ছে
@@ -338,7 +391,7 @@ async function run() {
 
         // 🚨 ২. Blood Request Delete API (DELETE)
         // টেবিল থেকে ডিলিট বাটনে চাপ দিলে এবং মডালে কনফার্ম করলে এই এপিআই কাজ করবে
-        app.delete("/api/request/delete/:id", verifyToken,verifyAdminOrVolunteer, async (req, res) => {
+        app.delete("/api/request/delete/:id", verifyToken, verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
 
@@ -418,6 +471,7 @@ async function run() {
         app.get("/api/donors", async (req, res) => {
             try {
                 const { bloodGroup, division, district, upazila } = req.query;
+                console.log(req.query)
 
                 // 🌟 পেজিনেশন প্যারামিটার (ডিফল্ট পেজ = ১, লিমিট = ৮)
                 const page = parseInt(req.query.page) || 1;
@@ -453,15 +507,15 @@ async function run() {
                     }
                 });
             } catch (error) {
-                console.error(error);
+                // console.error(error);
                 res.status(500).json({ success: false, message: "Server Error" });
             }
         });
 
-        console.log("Successfully connected to MongoDB!");
+        // console.log("Successfully connected to MongoDB!");
     }
     catch (error) {
-        console.error("MongoDB Connection Error:", error);
+        // console.error("MongoDB Connection Error:", error);
     }
 }
 run().catch(console.dir);
