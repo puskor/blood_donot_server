@@ -22,11 +22,81 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         await client.connect();
+        const database = client.db("blood_donor");
+        const sessionCollection = database.collection('session');
+        const usersData = database.collection("user");
+
+
+
+        const verifyToken = async (req, res, next) => {
+            // console.log(req.headers)
+
+            const authHeader = req.headers?.authorization;
+            // console.log(authHeader)
+
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            const token = authHeader.split(' ')[1]
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            const query = { token: token }
+
+            const session = await sessionCollection.findOne(query);
+
+            if (!session) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            const userId = session.userId;
+            const userQuery = {
+                _id: userId
+            }
+
+            const user = await usersData.findOne(userQuery);
+            // console.log(user)
+
+            if (!user) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            // set data in the req object
+            req.user = user;
+            next();
+        }
+
+        // must be used after verifyToken middleware
+        const verifyDonor = async (req, res, next) => {
+            if (req.user?.role !== 'donor') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
+
+        const verifyAdminOrVolunteer = (req, res, next) => {
+            if (req.user?.role !== 'volunteer' && req.user?.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
+
+        // must be used after verifyToken middleware
+        const verifyVolunteer = async (req, res, next) => {
+            if (req.user?.role !== 'volunteer') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
+
+        // must be used after verifyToken middleware
+        const verifyAdmin = async (req, res, next) => {
+            if (req.user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
 
         // Database এবং Collection ডিফাইন করা
-        const database = client.db("blood_donor");
 
-        // ১. রুট রাউট
         app.get("/", (req, res) => {
             res.send("hello this is donor");
         });
@@ -48,7 +118,10 @@ async function run() {
             }
         })
 
-        app.get("/api/payment",async(req,res)=>{
+
+
+        app.get("/api/payment", verifyToken, async (req, res) => {
+
             const result = await payment.find().toArray()
             res.json(result)
         })
@@ -56,7 +129,7 @@ async function run() {
 
         const usersCollection = database.collection("users_profile");
         // ২. কাস্টম সাইন-আপ মেটাডাটা সেভ করার POST API রাউট
-        app.post("/api/user/save-details", async (req, res) => {
+        app.post("/api/user/save-details", verifyToken, async (req, res) => {
             try {
                 const profileData = req.body;
                 // ডাটাবেজে ডাটা ইনসার্ট করা
@@ -72,7 +145,7 @@ async function run() {
                 res.status(500).send({ success: false, message: "Internal Server Error" });
             }
         });
-        app.get("/api/user/save-details/:id", async (req, res) => {
+        app.get("/api/user/save-details/:id", verifyToken, async (req, res) => {
             const { id } = req.params;
             // console.log("id",id)
 
@@ -90,7 +163,7 @@ async function run() {
 
         // request collection instance
         const request = database.collection("request");
-        app.post("/api/request", async (req, res) => {
+        app.post("/api/request",verifyToken, async (req, res) => {
             try {
                 const bloodRequestData = req.body;
                 const finalRequestData = {
@@ -203,7 +276,7 @@ async function run() {
 
         // 📝 ১. Blood Request Update API (PATCH)
         // এই রাউটটি দিয়ে স্ট্যাটাস চেঞ্জ (Accept/In Progress) এবং এডিট মডালের ডাটা উভয়ই আপডেট করা যাবে
-        app.patch("/api/request/update/:id", async (req, res) => {
+        app.patch("/api/request/update/:id", verifyToken,verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
                 // ফ্রন্টএন্ড থেকে আসা সম্ভাব্য সব আপডেট ফিল্ড রিসিভ করা হচ্ছে
@@ -265,7 +338,7 @@ async function run() {
 
         // 🚨 ২. Blood Request Delete API (DELETE)
         // টেবিল থেকে ডিলিট বাটনে চাপ দিলে এবং মডালে কনফার্ম করলে এই এপিআই কাজ করবে
-        app.delete("/api/request/delete/:id", async (req, res) => {
+        app.delete("/api/request/delete/:id", verifyToken,verifyAdminOrVolunteer, async (req, res) => {
             try {
                 const { id } = req.params;
 
@@ -304,7 +377,7 @@ async function run() {
 
 
         const donate = database.collection("donate");
-        app.post("/api/donate", async (req, res) => {
+        app.post("/api/donate", verifyToken, async (req, res) => {
             try {
                 const bloodRequestData = req.body;
                 const finalRequestData = {
