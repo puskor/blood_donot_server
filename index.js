@@ -140,7 +140,7 @@ async function run() {
             res.json(result);
         });
 
-        app.put("/api/user/save-details/:id", verifyToken, verifyAdmin, async (req, res) => {
+        app.put("/api/user/save-details/:id", verifyToken,  async (req, res) => {
             try {
                 const { id } = req.params;
                 const updatedData = req.body;
