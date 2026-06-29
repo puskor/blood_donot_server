@@ -33,58 +33,58 @@ const sessionCollection = database.collection("session");
 const usersData = database.collection("user");
 
 const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers?.authorization;
+  // console.log("authHeader", authHeader)
+  if (!authHeader) {
+      return res.status(401).send({ message: 'unauthorized access' })
+  }
+  const token = authHeader.split(' ')[1]
+  if (!token) {
+      return res.status(401).send({ message: 'unauthorized access' })
+  }
+  const query = { token: token }
+  const session = await sessionCollection.findOne(query);
+
+  if (!session) {
+      return res.status(401).send({ message: 'unauthorized access' })
+  }
+  const userId = session.userId;
+  const userQuery = { _id: userId }
+  const user = await usersData.findOne(userQuery);
+
+  if (!user) {
+      return res.status(401).send({ message: 'unauthorized access' })
+  }
+  req.user = user;
   next();
 
-  // const authHeader = req.headers?.authorization;
-  // console.log("authHeader", authHeader)
-  // if (!authHeader) {
-  //     return res.status(401).send({ message: 'unauthorized access' })
-  // }
-  // const token = authHeader.split(' ')[1]
-  // if (!token) {
-  //     return res.status(401).send({ message: 'unauthorized access' })
-  // }
-  // const query = { token: token }
-  // const session = await sessionCollection.findOne(query);
-
-  // if (!session) {
-  //     return res.status(401).send({ message: 'unauthorized access' })
-  // }
-  // const userId = session.userId;
-  // const userQuery = { _id: userId }
-  // const user = await usersData.findOne(userQuery);
-
-  // if (!user) {
-  //     return res.status(401).send({ message: 'unauthorized access' })
-  // }
-  // req.user = user;
 };
 
 const verifyDonor = async (req, res, next) => {
-  // if (req.user?.role !== 'donor' && req.user?.role !== 'user') {
-  //     return res.status(403).send({ message: 'forbidden access' })
-  // }
+  if (req.user?.role !== 'donor' && req.user?.role !== 'user') {
+      return res.status(403).send({ message: 'forbidden access' })
+  }
   next();
 };
 
 const verifyAdminOrVolunteer = (req, res, next) => {
-  // if (req.user?.role !== 'volunteer' && req.user?.role !== 'admin') {
-  //     return res.status(403).send({ message: 'forbidden access' })
-  // }
+  if (req.user?.role !== 'volunteer' && req.user?.role !== 'admin') {
+      return res.status(403).send({ message: 'forbidden access' })
+  }
   next();
 };
 
 const verifyVolunteer = async (req, res, next) => {
-  // if (req.user?.role !== 'volunteer') {
-  //     return res.status(403).send({ message: 'forbidden access' })
-  // }
+  if (req.user?.role !== 'volunteer') {
+      return res.status(403).send({ message: 'forbidden access' })
+  }
   next();
 };
 
 const verifyAdmin = async (req, res, next) => {
-  // if (req.user.role !== 'admin') {
-  //     return res.status(403).send({ message: 'forbidden access' })
-  // }
+  if (req.user.role !== 'admin') {
+      return res.status(403).send({ message: 'forbidden access' })
+  }
   next();
 };
 
@@ -250,7 +250,7 @@ app.get("/api/request", async (req, res) => {
   }
 });
 
-app.get("/api/request/:id", async (req, res) => {
+app.get("/api/request/:id",verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await request.findOne({ _id: new ObjectId(id) });
@@ -267,7 +267,7 @@ app.get("/api/request/:id", async (req, res) => {
   }
 });
 
-app.patch("/api/request/update/:id", async (req, res) => {
+app.patch("/api/request/update/:id",verifyToken,verifyAdminOrVolunteer, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -377,7 +377,7 @@ app.post("/api/donate", verifyToken, async (req, res) => {
   }
 });
 
-app.get("/api/donate/:id", async (req, res) => {
+app.get("/api/donate/:id",verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await donate.find({ donarId: id }).toArray();
